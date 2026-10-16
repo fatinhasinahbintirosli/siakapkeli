@@ -61,10 +61,31 @@ async function fetchArticle(url) {
   const doc = dom.window.document;
   const meta = (sel) => doc.querySelector(sel)?.getAttribute('content') || null;
   const image = meta('meta[property="og:image"]') || meta('meta[name="twitter:image"]') || meta('meta[property="og:image:url"]');
+  const ogTitle = meta('meta[property="og:title"]');
+
+  // 1) Data berstruktur JSON-LD (articleBody) — banyak portal berita letak teks penuh di sini
+  let ldBody = '';
+  for (const s of doc.querySelectorAll('script[type="application/ld+json"]')) {
+    try {
+      const walk = (o) => {
+        if (!o || typeof o !== 'object') return;
+        if (Array.isArray(o)) return o.forEach(walk);
+        if (typeof o.articleBody === 'string' && o.articleBody.length > ldBody.length) ldBody = o.articleBody;
+        if (o['@graph']) walk(o['@graph']);
+      };
+      walk(JSON.parse(s.textContent));
+    } catch {}
+  }
+
+  // 2) Readability (teks utama halaman)
   const article = new Readability(doc).parse();
-  const text = (article?.textContent || '').replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
-  return { title: article?.title || meta('meta[property="og:title"]') || '', text, image };
+  const rdText = article?.textContent || '';
+
+  const text = clean(ldBody.length > rdText.length ? ldBody : rdText);
+  return { title: article?.title || ogTitle || '', text, image };
 }
+
+const clean = (s) => String(s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
 
 async function rewriteWithGemini({ title, text, sourceName, categories, extra }) {
   const prompt = `Anda penulis blog berita viral Malaysia yang berpengalaman. Tulis SATU artikel BARU dalam Bahasa Melayu berdasarkan FAKTA daripada bahan sumber di bawah.
@@ -142,8 +163,10 @@ async function processItem(item, source, categories, extra) {
   if (exists) return 'seen';
 
   const art = await fetchArticle(link);
-  const text = art.text || item.contentSnippet || '';
-  if (text.length < 400) { await log('skip', `Teks terlalu pendek: ${link}`, source.name); return 'skip'; }
+  // Pilih teks terpanjang: halaman artikel atau kandungan yang disediakan dalam RSS
+  const feedText = clean(item['content:encoded'] || item.content || item.contentSnippet || '');
+  const text = art.text.length >= feedText.length ? art.text : feedText;
+  if (text.length < 400) return 'short';
 
   const ai = await rewriteWithGemini({
     title: art.title || item.title || '', text, sourceName: source.name,
@@ -198,16 +221,23 @@ async function main() {
     try { feed = await parser.parseURL(source.feed_url); }
     catch (e) { await log('error', `RSS gagal: ${e.message}`, source.name); continue; }
 
-    let done = 0;
+    let done = 0, short = 0;
     for (const item of feed.items.slice(0, 15)) {
       if (done >= source.max_per_run) break;
       try {
         const r = await processItem(item, source, categories || [], extra);
         if (r === 'ok') { done++; published++; await sleep(DELAY_MS); }
+        if (r === 'short') short++;
       } catch (e) {
+        // Laman menolak akses automatik (403/401/429): hormati & berhenti untuk sumber ini
+        if (/HTTP (401|403|429)/.test(e.message)) {
+          await log('error', `${source.name} menyekat akses automatik (${e.message}). Sumber ini dilangkau — pertimbangkan untuk nyahaktifkan di menu Sumber.`, source.name);
+          break;
+        }
         await log('error', `${e.message} — ${item.link}`, source.name);
       }
     }
+    if (short && !done) await log('skip', `${short} artikel dilangkau kerana teks terlalu pendek untuk ditulis semula.`, source.name);
     await db.from('sources').update({ last_run_at: new Date().toISOString() }).eq('id', source.id);
   }
 
