@@ -12,7 +12,7 @@ const env = (k, d) => process.env[k] ?? d;
 const SUPABASE_URL = env('NEXT_PUBLIC_SUPABASE_URL');
 const SERVICE_KEY = env('SUPABASE_SERVICE_ROLE_KEY');
 const GEMINI_KEY = env('GEMINI_API_KEY');
-const GEMINI_MODEL = env('GEMINI_MODEL') || 'gemini-2.5-flash';
+const GEMINI_MODEL = env('GEMINI_MODEL') || 'gemini-3.8-flash';
 const IMGBB_KEY = env('IMGBB_API_KEY');
 const SITE_URL = env('NEXT_PUBLIC_SITE_URL', '').replace(/\/$/, '');
 const REVALIDATE_SECRET = env('REVALIDATE_SECRET');
@@ -122,7 +122,11 @@ ${text.slice(0, 12000)}`;
       signal: AbortSignal.timeout(90000),
     });
     if (res.status === 429 || res.status >= 500) { await sleep(20000 * attempt); continue; }
-    if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok) {
+      const err = new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      err.fatal = true; // kunci/model salah — tiada guna cuba artikel lain
+      throw err;
+    }
     const data = await res.json();
     const raw = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
     const json = JSON.parse(raw.replace(/^```json\s*|```$/g, '').trim());
@@ -229,6 +233,7 @@ async function main() {
         if (r === 'ok') { done++; published++; await sleep(DELAY_MS); }
         if (r === 'short') short++;
       } catch (e) {
+        if (e.fatal) { await log('error', `Berhenti: ${e.message}`, source.name); throw e; }
         // Laman menolak akses automatik (403/401/429): hormati & berhenti untuk sumber ini
         if (/HTTP (401|403|429)/.test(e.message)) {
           await log('error', `${source.name} menyekat akses automatik (${e.message}). Sumber ini dilangkau — pertimbangkan untuk nyahaktifkan di menu Sumber.`, source.name);
