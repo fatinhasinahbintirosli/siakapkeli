@@ -1,0 +1,32 @@
+name: Auto-share ke Facebook (Postolab)
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: share
+  cancel-in-progress: false
+
+jobs:
+  share:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Pasang pakej
+        run: npm install --no-audit --no-fund --ignore-scripts
+      - run: node scripts/share-postolab.mjs
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || vars.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || secrets.NEXT_PUBLIC_SITE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          POSTOLAB_URL: ${{ vars.POSTOLAB_URL }}
+          POSTOLAB_API_KEY: ${{ secrets.POSTOLAB_API_KEY }}
+          POSTOLAB_PAGE_IDS: ${{ vars.POSTOLAB_PAGE_IDS }}
