@@ -148,3 +148,10 @@ on conflict (feed_url) do nothing;
 
 -- Kemas kini untuk database sedia ada (selamat dijalankan berulang kali)
 alter table posts add column if not exists source_title text;
+
+-- Auto-share ke Facebook (Postolab)
+alter table posts add column if not exists shared_at timestamptz;
+alter table posts add column if not exists share_error text;
+alter table posts add column if not exists share_attempts int not null default 0;
+alter table posts add column if not exists fb_caption text;
+insert into settings (key, value) values ('share_enabled', 'true'::jsonb) on conflict (key) do nothing;
