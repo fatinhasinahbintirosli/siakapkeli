@@ -8,5 +8,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
   revalidatePath('/', 'layout');
+  for (const p of ['/sitemap.xml', '/news-sitemap.xml', '/rss.xml']) revalidatePath(p);
   return NextResponse.json({ ok: true, at: new Date().toISOString() });
 }
