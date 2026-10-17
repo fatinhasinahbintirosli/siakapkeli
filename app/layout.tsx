@@ -6,6 +6,9 @@ import './globals.css';
 
 // Font disimpan sendiri oleh Next.js (tiada permintaan ke Google Fonts semasa dimuat = lebih laju)
 const inter = Inter({ subsets: ['latin'], weight: ['400', '500', '700', '800'], variable: '--font-inter', display: 'swap' });
+// Google Analytics: boleh tukar melalui env NEXT_PUBLIC_GA_ID di Vercel
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID || 'G-XTW5CCQH21';
+
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500', '700'], variable: '--font-mono', display: 'swap' });
 
 export const metadata: Metadata = {
@@ -41,6 +44,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {children}
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(orgLd) }} />
+        {GA_ID && (
+          // Google Analytics 4 — dimuat selepas laman boleh digunakan, tak melambatkan paparan
+          <>
+            <Script id="ga4-src" strategy="afterInteractive" src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} />
+            <Script id="ga4" strategy="afterInteractive">
+              {`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${GA_ID}');`}
+            </Script>
+          </>
+        )}
         {ADSENSE_CLIENT && (
           // lazyOnload: iklan dimuat selepas kandungan siap, supaya laman tak jadi perlahan
           <Script id="adsense" strategy="lazyOnload" crossOrigin="anonymous"
