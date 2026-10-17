@@ -16,7 +16,7 @@ const GEMINI_MODEL = env('GEMINI_MODEL') || 'gemini-3.8-flash';
 const IMGBB_KEY = env('IMGBB_API_KEY');
 const SITE_URL = env('NEXT_PUBLIC_SITE_URL', '').replace(/\/$/, '');
 const REVALIDATE_SECRET = env('REVALIDATE_SECRET');
-const DELAY_MS = Number(env('AUTOPOST_DELAY_MS', '8000')); // jarak antara panggilan AI
+const DELAY_MS = Number(env('AUTOPOST_DELAY_MS') || '15000'); // jarak antara panggilan AI
 
 for (const [k, v] of Object.entries({ NEXT_PUBLIC_SUPABASE_URL: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY, GEMINI_API_KEY: GEMINI_KEY, IMGBB_API_KEY: IMGBB_KEY })) {
   if (!v) { console.error(`Tiada env ${k}`); process.exit(1); }
@@ -111,7 +111,8 @@ Tajuk asal: ${title}
 ${text.slice(0, 12000)}`;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  let last = '';
+  for (let attempt = 1; attempt <= 4; attempt++) {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -119,9 +120,20 @@ ${text.slice(0, 12000)}`;
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.9, responseMimeType: 'application/json' },
       }),
-      signal: AbortSignal.timeout(90000),
+      signal: AbortSignal.timeout(120000),
     });
-    if (res.status === 429 || res.status >= 500) { await sleep(20000 * attempt); continue; }
+    if (res.status === 429 || res.status >= 500) {
+      const body = await res.text();
+      last = `${res.status}: ${body.slice(0, 400)}`;
+      // Kuota harian habis — tiada guna tunggu, berhenti untuk pusingan ini
+      if (res.status === 429 && /per ?day|PerDay|daily/i.test(body)) {
+        const err = new Error(`Kuota harian Gemini habis. ${last}`); err.fatal = true; throw err;
+      }
+      // Ikut masa tunggu yang Google cadangkan (retryDelay), atau 30s/60s/90s
+      const m = body.match(/"retryDelay":\s*"(\d+)s"/);
+      await sleep(m ? (Number(m[1]) + 2) * 1000 : 30000 * attempt);
+      continue;
+    }
     if (!res.ok) {
       const err = new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
       err.fatal = true; // kunci/model salah — tiada guna cuba artikel lain
@@ -133,7 +145,9 @@ ${text.slice(0, 12000)}`;
     if (!json.title || !json.content_html) throw new Error('Jawapan Gemini tidak lengkap');
     return json;
   }
-  throw new Error('Gemini gagal selepas 3 cubaan (had kuota?)');
+  const err = new Error(`Gemini gagal selepas 4 cubaan — ${last}`);
+  if (last.startsWith('429')) err.fatal = true; // had kuota: hentikan pusingan, cuba lagi 2 jam lagi
+  throw err;
 }
 
 async function uploadToImgbb(imageUrl, name) {
@@ -160,11 +174,63 @@ async function uploadToImgbb(imageUrl, name) {
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// ---------- Pengesan cerita serupa (tajuk hampir sama) ----------
+const STOP = new Set(('di ke dan yang untuk dari daripada pada ini itu dengan selepas kerana akan telah sudah tidak tak ada dalam oleh bagi atau juga lebih ia mereka kita kami anda saya dia beliau jadi buat kata bila apa siapa mana macam tu ni lagi masih baru hari semalam esok kini cuba boleh perlu mahu nak the a an of to in on for and is are was').split(' '));
+const SIM_THRESHOLD = Number(env('DUP_THRESHOLD') || '0.5');
+const SIM_DAYS = Number(env('DUP_DAYS') || '3');
+
+function words(title) {
+  return new Set(String(title || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
+    .filter((w) => w && !STOP.has(w) && (w.length > 2 || /\d/.test(w)))
+    .map((w) => w.replace(/(nya|lah|kah)$/, ''))); // buang akhiran biasa: "polisnya" = "polis"
+}
+
+function similarity(a, b) {
+  if (!a.size || !b.size) return 0;
+  let common = 0;
+  for (const w of a) if (b.has(w)) common++;
+  const jaccard = common / (a.size + b.size - common);
+  const overlap = common / Math.min(a.size, b.size);
+  // Tajuk pendek yang hampir semua perkataannya ada dalam tajuk lain juga dikira serupa
+  return Math.max(jaccard, Math.min(a.size, b.size) >= 4 ? overlap * 0.8 : 0);
+}
+
+let recentTitles = []; // [{ words, label }]
+
+async function loadRecentTitles() {
+  const since = new Date(Date.now() - SIM_DAYS * 86400000).toISOString();
+  let { data, error } = await db.from('posts').select('title, source_title').gte('created_at', since).limit(1000);
+  if (error) ({ data } = await db.from('posts').select('title').gte('created_at', since).limit(1000)); // lajur source_title belum wujud
+  recentTitles = [];
+  for (const p of data || []) {
+    if (p.source_title) recentTitles.push({ words: words(p.source_title), label: p.source_title });
+    recentTitles.push({ words: words(p.title), label: p.title });
+  }
+}
+
+function findSimilar(title) {
+  const w = words(title);
+  let best = null;
+  for (const r of recentTitles) {
+    const s = similarity(w, r.words);
+    if (s >= SIM_THRESHOLD && (!best || s > best.s)) best = { s, label: r.label };
+  }
+  return best;
+}
+
 async function processItem(item, source, categories, extra) {
   const link = item.link?.trim();
   if (!link) return 'skip';
   const { data: exists } = await db.from('posts').select('id').eq('source_url', link).maybeSingle();
   if (exists) return 'seen';
+
+  // Langkau kalau cerita yang sama (dari sumber lain) sudah diterbitkan dalam beberapa hari lepas
+  const dup = findSimilar(item.title);
+  if (dup) {
+    await log('skip', `Cerita serupa sudah ada (${Math.round(dup.s * 100)}%): "${item.title}" ≈ "${dup.label}"`, source.name);
+    return 'dup';
+  }
 
   const art = await fetchArticle(link);
   // Pilih teks terpanjang: halaman artikel atau kandungan yang disediakan dalam RSS
@@ -188,8 +254,9 @@ async function processItem(item, source, categories, extra) {
   const slug = await uniqueSlug(slugify(ai.title));
   const credit = `<p class="sumber">Sumber: <a href="${esc(link)}" target="_blank" rel="nofollow noopener">${esc(source.name)}</a></p>`;
 
-  const { data: post, error } = await db.from('posts').insert({
+  const row = {
     title: ai.title.slice(0, 200),
+    source_title: (item.title || art.title || '').slice(0, 300) || null,
     slug,
     excerpt: ai.excerpt?.slice(0, 300) || null,
     meta_description: ai.meta_description?.slice(0, 160) || null,
@@ -204,8 +271,16 @@ async function processItem(item, source, categories, extra) {
     status: 'published',
     auto: true,
     published_at: new Date().toISOString(),
-  }).select('id, slug').single();
+  };
+  let { data: post, error } = await db.from('posts').insert(row).select('id, slug').single();
+  if (error && /source_title/.test(error.message)) { // database lama tanpa lajur source_title
+    delete row.source_title;
+    ({ data: post, error } = await db.from('posts').insert(row).select('id, slug').single());
+  }
   if (error) throw new Error(error.message);
+  // Ingat tajuk ini supaya artikel seterusnya dalam pusingan yang sama juga disemak
+  if (item.title) recentTitles.push({ words: words(item.title), label: item.title });
+  recentTitles.push({ words: words(row.title), label: row.title });
   await log('ok', `Terbit: /${post.slug}`, source.name, post.id);
   return 'ok';
 }
@@ -218,6 +293,7 @@ async function main() {
   const { data: categories } = await db.from('categories').select('id, name, slug');
   const { data: sources } = await db.from('sources').select('*').eq('active', true);
   if (!sources?.length) { console.log('Tiada sumber aktif.'); return; }
+  await loadRecentTitles();
 
   let published = 0;
   for (const source of sources) {
