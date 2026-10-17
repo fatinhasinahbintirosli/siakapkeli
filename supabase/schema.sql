@@ -25,6 +25,7 @@ create table if not exists posts (
   image_thumb text,
   image_credit text,
   source_url text unique,
+  source_title text,
   source_name text,
   category_id uuid references categories(id) on delete set null,
   tags text[] not null default '{}',
@@ -144,3 +145,6 @@ on conflict (feed_url) do nothing;
 insert into sources (name, feed_url, category_id, max_per_run)
 select 'OH! Media', 'https://ohbulan.com/feed/', id, 2 from categories where slug = 'kisah'
 on conflict (feed_url) do nothing;
+
+-- Kemas kini untuk database sedia ada (selamat dijalankan berulang kali)
+alter table posts add column if not exists source_title text;

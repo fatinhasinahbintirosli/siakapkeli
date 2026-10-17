@@ -7,7 +7,8 @@ import { getLatest, getPost, getRelated } from '@/lib/db';
 import { cleanHtml } from '@/lib/sanitize';
 import { formatDate, readingTime, SITE_NAME, SITE_URL } from '@/lib/site';
 
-export const revalidate = 600;
+// Cache 1 jam. Auto-post & admin akan refresh cache serta-merta bila ada perubahan.
+export const revalidate = 3600;
 export const dynamicParams = true;
 export async function generateStaticParams() { return []; }
 
@@ -90,7 +91,7 @@ export default async function ArticlePage({ params }: P) {
 
             {post.image_url && (
               <figure className="feature">
-                <img src={post.image_url} alt={post.title} width={1200} height={675} fetchPriority="high" />
+                <img src={post.image_url} alt={post.title} width={1200} height={675} fetchPriority="high" decoding="async" />
                 {post.image_credit && <figcaption>Gambar: {post.image_credit}</figcaption>}
               </figure>
             )}
@@ -122,7 +123,7 @@ export default async function ArticlePage({ params }: P) {
 
           <aside>
             <div className="sticky">
-              <div className="section-title" style={{ margin: '0 0 4px' }}><h2>Terkini</h2></div>
+              <div className="side-head"><span>// Terkini</span><span className="pill" style={{ border: 0, padding: 0 }}><span className="dot" />Live</span></div>
               {latest.filter((p) => p.id !== post.id).slice(0, 6).map((p) => <MiniCard key={p.id} post={p} />)}
             </div>
           </aside>

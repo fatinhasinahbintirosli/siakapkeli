@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { PER_PAGE } from './site';
 
@@ -27,11 +28,11 @@ export async function getLatest(page = 1, categoryId?: string) {
   return { posts: (data || []) as unknown as Post[], total: count || 0 };
 }
 
-export async function getPost(slug: string) {
+export const getPost = cache(async function getPost(slug: string) {
   const { data } = await publicDb().from('posts').select('*, categories(id, name, slug)')
     .eq('slug', slug).eq('status', 'published').maybeSingle();
   return data as Post | null;
-}
+});
 
 export async function getRelated(post: Post, limit = 4) {
   let q = publicDb().from('posts').select(CARD).eq('status', 'published').neq('id', post.id)
@@ -41,15 +42,15 @@ export async function getRelated(post: Post, limit = 4) {
   return (data || []) as unknown as Post[];
 }
 
-export async function getCategories() {
+export const getCategories = cache(async function getCategories() {
   const { data } = await publicDb().from('categories').select('id, name, slug').order('name');
   return (data || []) as Category[];
-}
+});
 
-export async function getCategory(slug: string) {
+export const getCategory = cache(async function getCategory(slug: string) {
   const { data } = await publicDb().from('categories').select('id, name, slug').eq('slug', slug).maybeSingle();
   return data as Category | null;
-}
+});
 
 export async function searchPosts(q: string) {
   const term = q.replace(/[%,()]/g, ' ').trim();

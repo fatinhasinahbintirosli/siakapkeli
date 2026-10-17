@@ -164,7 +164,7 @@ export default function PostEditor({ post, categories }: { post?: any; categorie
           {post?.source_url && (
             <div className="panel">
               <h2>Sumber</h2>
-              <a href={post.source_url} target="_blank" rel="noopener" style={{ wordBreak: 'break-all', color: '#d6361f' }}>{post.source_name}: {post.source_url}</a>
+              <a href={post.source_url} target="_blank" rel="noopener" style={{ wordBreak: 'break-all', color: '#FF3E00' }}>{post.source_name}: {post.source_url}</a>
             </div>
           )}
         </div>

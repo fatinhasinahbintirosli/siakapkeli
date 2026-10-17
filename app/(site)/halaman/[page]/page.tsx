@@ -1,7 +1,10 @@
 import type { Metadata } from 'next';
 import Listing from '@/components/Listing';
 
-export const revalidate = 300;
+export const revalidate = 1800; // refresh serta-merta selepas auto-post
+// Jana bila pertama kali dilawati, kemudian simpan dalam cache (ISR) — bukan dijana setiap kali
+export const dynamicParams = true;
+export async function generateStaticParams() { return []; }
 
 type P = { params: Promise<{ page: string }> };
 
