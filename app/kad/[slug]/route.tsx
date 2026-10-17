@@ -28,13 +28,13 @@ async function loadPhoto(url?: string | null) {
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!res.ok) return null;
     const type = (res.headers.get('content-type') || '').toLowerCase();
-    let buf = Buffer.from(await res.arrayBuffer());
-    if (/image\/(jpe?g|png)/.test(type) && buf.length < 4_000_000) {
-      return `data:${type.split(';')[0]};base64,${buf.toString('base64')}`;
+    const original = Buffer.from(await res.arrayBuffer());
+    if (/image\/(jpe?g|png)/.test(type) && original.length < 4_000_000) {
+      return `data:${type.split(';')[0]};base64,${original.toString('base64')}`;
     }
     const sharp = (await import('sharp')).default;
-    buf = await sharp(buf).resize({ width: 1080, height: 1000, fit: 'cover', withoutEnlargement: false }).jpeg({ quality: 82 }).toBuffer();
-    return `data:image/jpeg;base64,${buf.toString('base64')}`;
+    const converted = await sharp(original).resize({ width: 1080, height: 1000, fit: 'cover' }).jpeg({ quality: 82 }).toBuffer();
+    return `data:image/jpeg;base64,${converted.toString('base64')}`;
   } catch (e) {
     console.error('Kad: gagal muat gambar', url, e);
     return null;
