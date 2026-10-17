@@ -17,6 +17,7 @@ const IMGBB_KEY = env('IMGBB_API_KEY');
 const SITE_URL = env('NEXT_PUBLIC_SITE_URL', '').replace(/\/$/, '');
 const REVALIDATE_SECRET = env('REVALIDATE_SECRET');
 const DELAY_MS = Number(env('AUTOPOST_DELAY_MS') || '15000'); // jarak antara panggilan AI
+const INLINE_IMAGES = Math.max(0, Number(env('AUTOPOST_INLINE_IMAGES') || '3')); // maks gambar di tengah artikel
 
 for (const [k, v] of Object.entries({ NEXT_PUBLIC_SUPABASE_URL: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY, GEMINI_API_KEY: GEMINI_KEY, IMGBB_API_KEY: IMGBB_KEY })) {
   if (!v) { console.error(`Tiada env ${k}`); process.exit(1); }
@@ -82,7 +83,48 @@ async function fetchArticle(url) {
   const rdText = article?.textContent || '';
 
   const text = clean(ldBody.length > rdText.length ? ldBody : rdText);
-  return { title: article?.title || ogTitle || '', text, image };
+  const inlineImages = article?.content ? findInlineImages(article.content, url, image) : [];
+  return { title: article?.title || ogTitle || '', text, image, inlineImages };
+}
+
+// ---------- Gambar di dalam isi artikel (bukan gambar utama) ----------
+const JUNK_IMG = /(logo|icon|avatar|emoji|sprite|banner|button|badge|pixel|tracking|placeholder|blank|loader|spinner|(?:^|[\/_.-])ads?[\/_.-]|advert|sponsor|author|profile|whatsapp|telegram|share|social)/i;
+const imgKey = (u) => { try { return new URL(u).pathname.split('/').pop().replace(/[-_]?\d{2,4}x\d{2,4}/, '').replace(/\.(jpe?g|png|webp|avif)$/i, '').toLowerCase(); } catch { return u; } };
+
+function findInlineImages(contentHtml, pageUrl, mainImage) {
+  const d = new JSDOM(`<body>${contentHtml}</body>`, { url: pageUrl, virtualConsole: new VirtualConsole() }).window.document;
+  const out = [];
+  const seen = new Set(mainImage ? [imgKey(new URL(mainImage, pageUrl).href)] : []);
+  for (const img of d.querySelectorAll('img')) {
+    // Gambar "lazy-load" simpan URL sebenar dalam data-src / srcset
+    const srcset = img.getAttribute('data-srcset') || img.getAttribute('srcset') || '';
+    const fromSet = srcset.split(',').map((x) => x.trim().split(/\s+/)[0]).filter(Boolean).pop();
+    const raw = img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || img.getAttribute('data-original') || fromSet || img.getAttribute('src') || '';
+    if (!raw || raw.startsWith('data:')) continue;
+    let src;
+    try { src = new URL(raw, pageUrl).href; } catch { continue; }
+    if (!/^https?:/.test(src) || /\.(svg|gif)(\?|$)/i.test(src) || JUNK_IMG.test(src)) continue;
+    const w = Number(img.getAttribute('width')) || 0, h = Number(img.getAttribute('height')) || 0;
+    if ((w && w < 300) || (h && h < 200)) continue; // terlalu kecil — ikon/gambar kecil
+    const key = imgKey(src);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const cap = img.closest('figure')?.querySelector('figcaption')?.textContent?.trim() || img.getAttribute('alt') || '';
+    out.push({ src, alt: cap.slice(0, 150) });
+    if (out.length >= INLINE_IMAGES * 2) break; // simpan calon lebih, kalau ada yang gagal dimuat naik
+  }
+  return out;
+}
+
+// Selit gambar antara perenggan, disusun sekata (tak di awal, tak di hujung)
+function insertInlineImages(html, figures) {
+  if (!figures.length) return html;
+  const parts = html.split('</p>');
+  const paraCount = parts.length - 1;
+  if (paraCount < 3) return html;
+  const step = paraCount / (figures.length + 1);
+  const at = new Map(figures.map((f, i) => [Math.max(1, Math.round(step * (i + 1))), f]));
+  return parts.map((x, i) => (i < parts.length - 1 ? x + '</p>' + (at.get(i + 1) || '') : x)).join('');
 }
 
 const clean = (s) => String(s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
@@ -160,7 +202,7 @@ async function uploadToImgbb(imageUrl, name) {
     const j = await res.json();
     if (!j.success) throw new Error(j?.error?.message || 'imgbb gagal');
     const https = (u) => (u || '').replace(/^http:\/\//, 'https://');
-    return { url: https(j.data.image?.url || j.data.url), thumb: https(j.data.medium?.url || j.data.thumb?.url || j.data.url) };
+    return { url: https(j.data.image?.url || j.data.url), thumb: https(j.data.medium?.url || j.data.thumb?.url || j.data.url), width: Number(j.data.width) || 0, height: Number(j.data.height) || 0 };
   };
   try {
     return await tryUpload(imageUrl); // imgbb boleh terima URL terus
@@ -251,6 +293,19 @@ async function processItem(item, source, categories, extra) {
     catch (e) { await log('error', `Gambar gagal (${e.message}) — terbit tanpa gambar`, source.name); }
   }
 
+  // Gambar di tengah artikel (maks INLINE_IMAGES), dimuat naik ke imgbb juga
+  const figures = [];
+  for (const im of art.inlineImages || []) {
+    if (figures.length >= INLINE_IMAGES) break;
+    try {
+      const up = await uploadToImgbb(im.src, `${slugify(ai.title)}-${figures.length + 2}`);
+      if (up.width && up.width < 300) continue; // rupanya gambar kecil
+      const alt = esc(im.alt || ai.title);
+      figures.push(`<figure><img src="${esc(up.url)}" alt="${alt}"${up.width ? ` width="${up.width}" height="${up.height}"` : ''} loading="lazy" /></figure>`);
+    } catch { /* abaikan gambar yang gagal */ }
+  }
+  const bodyHtml = insertInlineImages(String(ai.content_html || ''), figures);
+
   const cat = categories.find((c) => c.name.toLowerCase() === String(ai.category || '').toLowerCase());
   const slug = await uniqueSlug(slugify(ai.title));
   const credit = `<p class="sumber">Sumber: <a href="${esc(link)}" target="_blank" rel="nofollow noopener">${esc(source.name)}</a></p>`;
@@ -261,7 +316,7 @@ async function processItem(item, source, categories, extra) {
     slug,
     excerpt: ai.excerpt?.slice(0, 300) || null,
     meta_description: ai.meta_description?.slice(0, 160) || null,
-    content: `${ai.content_html}\n${credit}`,
+    content: `${bodyHtml}\n${credit}`,
     image_url: image?.url || null,
     image_thumb: image?.thumb || null,
     image_credit: image ? source.name : null,
