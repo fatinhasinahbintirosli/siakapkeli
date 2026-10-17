@@ -17,6 +17,7 @@ const SITE_URL = env('NEXT_PUBLIC_SITE_URL', '').replace(/\/$/, '');
 const POSTOLAB_URL = env('POSTOLAB_URL', 'https://postolab.com').replace(/\/$/, '');
 const POSTOLAB_API_KEY = (env('POSTOLAB_API_KEY', '')).trim();
 const POSTOLAB_PAGE_IDS = env('POSTOLAB_PAGE_IDS', 'all').trim();
+const POSTOLAB_PROFILE = env('POSTOLAB_PROFILE', 'siakapkeli').trim(); // profil Postolab tempat post dipaparkan dalam Queue
 const GEMINI_KEY = env('GEMINI_API_KEY');
 const GEMINI_MODEL = env('GEMINI_MODEL', 'gemini-3.8-flash');
 const MAX_AGE_HOURS = Number(env('SHARE_MAX_AGE_HOURS', '24'));
@@ -155,6 +156,7 @@ async function main() {
           imageUrl: cardUrl,
           firstComment: `${pick(COMMENTS)} ${articleUrl}?${utm}`,
           scheduledAt: when,
+          profile: POSTOLAB_PROFILE,
         });
         okPages.push(page);
       } catch (e) {
