@@ -148,6 +148,8 @@ article h1 { font-size: clamp(32px, 4.6vw, 54px); font-weight: 800; letter-spaci
 .prose table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
 .prose iframe, .prose video, .prose embed, .prose object, .prose figure { max-width: 100% !important; }
 .prose img { height: auto !important; }
+.prose figure { margin: 1.6em 0; }
+.prose figure img { display: block; width: 100%; max-height: 640px; object-fit: contain; background: var(--bg-2); border: 1px solid var(--line); }
 article, aside, .card, .mini > div, .hero-main, .hero-side { min-width: 0; }
 article h1, .card h3, .mini h3, .hero-main h2 { overflow-wrap: anywhere; }
 .prose p { margin: 0 0 1.25em; }
