@@ -77,12 +77,13 @@ async function main() {
 
     const res = await fetch(`${POSTOLAB_URL}/api/external/posts`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${POSTOLAB_API_KEY}` },
+      // x-api-key juga dihantar kerana header Authorization dibuang oleh fetch jika berlaku redirect (cth. postolab.com → www.postolab.com)
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${POSTOLAB_API_KEY.trim()}`, 'x-api-key': POSTOLAB_API_KEY.trim() },
       body: JSON.stringify({ pageIds, message: caption, imageUrl: cardUrl, firstComment }),
       signal: AbortSignal.timeout(30000),
     });
     const out = await res.json().catch(() => ({}));
-    if (!res.ok || !out.success) throw new Error(out.error || `Postolab HTTP ${res.status}`);
+    if (!res.ok || !out.success) throw new Error(`${out.error || 'Postolab'} (HTTP ${res.status}${res.redirected ? `, redirect ke ${res.url}` : ''}${out.reason ? `, sebab: ${out.reason}` : ''})`);
 
     await db.from('posts').update({ shared_at: new Date().toISOString(), share_error: null, fb_caption: caption }).eq('id', post.id);
     await log('ok', `Dihantar ke Postolab (${out.pages} page): ${post.title}`, post.id);
