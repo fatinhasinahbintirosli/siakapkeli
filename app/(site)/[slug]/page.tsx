@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import AdSlot from '@/components/AdSlot';
+import ReadMore from '@/components/ReadMore';
 import { Header, MiniCard, PostCard } from '@/components/Site';
 import { getLatest, getPost, getRelated } from '@/lib/db';
 import { cleanHtml } from '@/lib/sanitize';
@@ -111,12 +112,25 @@ export default async function ArticlePage({ params }: P) {
               </figure>
             )}
 
-            {chunks.map((c, i) => (
-              <div key={i}>
-                <div className="prose" dangerouslySetInnerHTML={{ __html: c }} />
-                {i < chunks.length - 1 && <AdSlot slot={SLOT_ARTICLE} variant="in-article" />}
-              </div>
-            ))}
+            {(() => {
+              const render = (list: string[], offset: number, adAfterLast: boolean) => list.map((c, i) => (
+                <div key={offset + i}>
+                  <div className="prose" dangerouslySetInnerHTML={{ __html: c }} />
+                  {(adAfterLast || i < list.length - 1) && <AdSlot slot={SLOT_ARTICLE} variant="in-article" />}
+                </div>
+              ));
+              // Artikel pendek: papar penuh tanpa "Sambung Baca"
+              if (chunks.length < 2) return render(chunks, 0, false);
+              const visible = chunks.length >= 4 ? 2 : 1;
+              return (
+                <ReadMore
+                  head={render(chunks.slice(0, visible), 0, false)}
+                  ad={<AdSlot slot={SLOT_ARTICLE} variant="in-article" />}
+                >
+                  {render(chunks.slice(visible), visible, false)}
+                </ReadMore>
+              );
+            })()}
 
             {/* Iklan hujung artikel (dijarakkan dari butang kongsi untuk elak klik tak sengaja) */}
             <AdSlot slot={SLOT_LIST || SLOT_ARTICLE} />
