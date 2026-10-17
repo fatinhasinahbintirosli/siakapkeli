@@ -170,7 +170,11 @@ article h1 { font-size: clamp(32px, 4.6vw, 54px); font-weight: 800; letter-spaci
 }
 .share a:hover { background: var(--accent); color: #000; }
 
-aside .sticky { position: sticky; top: 76px; border: 1px solid var(--line); }
+aside { display: flex; flex-direction: column; gap: 20px; }
+aside .side-list { border: 1px solid var(--line); }
+aside .ad { margin: 0; }
+aside .sticky-ad { position: sticky; top: 76px; }
+.ad-vertical { min-height: 280px; }
 aside .side-head { padding: 12px 16px; border-bottom: 1px solid var(--line); font: 500 10px/1 var(--mono); letter-spacing: 1.5px; text-transform: uppercase; color: var(--dim); display: flex; justify-content: space-between; background: var(--bg-2); }
 
 .ad { margin: 28px 0; min-height: 100px; text-align: center; }

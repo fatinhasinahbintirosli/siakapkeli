@@ -3,7 +3,7 @@ export const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME || 'Siakap Keli';
 export const SITE_DESC =
   process.env.NEXT_PUBLIC_SITE_DESCRIPTION || 'Berita viral, semasa dan kisah menarik Malaysia setiap hari.';
 export const ADSENSE_CLIENT = process.env.NEXT_PUBLIC_ADSENSE_CLIENT || '';
-export const PER_PAGE = 12;
+export const PER_PAGE = 18;
 
 export function formatDate(d?: string | null) {
   if (!d) return '';

@@ -42,11 +42,26 @@ export default async function ArticlePage({ params }: P) {
 
   const [related, { posts: latest }] = await Promise.all([getRelated(post, 4), getLatest(1)]);
   const html = cleanHtml(post.content);
-  // Selit iklan selepas perenggan ke-3
-  const parts = html.split('</p>');
-  const cut = Math.min(3, parts.length - 1);
-  const top = parts.slice(0, cut).join('</p>') + (cut > 0 ? '</p>' : '');
-  const bottom = parts.slice(cut).join('</p>');
+  // Pecahkan artikel kepada beberapa bahagian dan selit iklan In-article:
+  // selepas perenggan ke-2, kemudian setiap 3 perenggan, dengan sekurang-kurangnya
+  // 2 perenggan selepas iklan terakhir (supaya kandungan sentiasa lebih banyak daripada iklan).
+  const paras = html.split('</p>').map((x, i, a) => (i < a.length - 1 ? x + '</p>' : x));
+  const AD_FIRST = 2, AD_EVERY = 3;
+  const chunks: string[] = [];
+  let buf = '';
+  paras.forEach((para, i) => {
+    buf += para;
+    const n = i + 1;
+    const remaining = paras.length - 1 - n; // perenggan yang masih tinggal
+    if ((n === AD_FIRST || (n > AD_FIRST && (n - AD_FIRST) % AD_EVERY === 0)) && remaining >= 2) {
+      chunks.push(buf); buf = '';
+    }
+  });
+  if (buf) chunks.push(buf);
+  const SLOT_ARTICLE = process.env.NEXT_PUBLIC_ADSENSE_SLOT_ARTICLE;
+  const SLOT_LIST = process.env.NEXT_PUBLIC_ADSENSE_SLOT_LIST;
+  const SLOT_SIDEBAR = process.env.NEXT_PUBLIC_ADSENSE_SLOT_SIDEBAR || SLOT_LIST;
+  const SLOT_MULTIPLEX = process.env.NEXT_PUBLIC_ADSENSE_SLOT_MULTIPLEX;
 
   const url = `${SITE_URL}/${post.slug}`;
   const shareText = encodeURIComponent(`${post.title} ${url}`);
@@ -96,9 +111,15 @@ export default async function ArticlePage({ params }: P) {
               </figure>
             )}
 
-            <div className="prose" dangerouslySetInnerHTML={{ __html: top }} />
-            <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_ARTICLE} />
-            <div className="prose" dangerouslySetInnerHTML={{ __html: bottom }} />
+            {chunks.map((c, i) => (
+              <div key={i}>
+                <div className="prose" dangerouslySetInnerHTML={{ __html: c }} />
+                {i < chunks.length - 1 && <AdSlot slot={SLOT_ARTICLE} variant="in-article" />}
+              </div>
+            ))}
+
+            {/* Iklan hujung artikel (dijarakkan dari butang kongsi untuk elak klik tak sengaja) */}
+            <AdSlot slot={SLOT_LIST || SLOT_ARTICLE} />
 
             {post.tags?.length > 0 && (
               <div className="tags">{post.tags.map((t) => <Link key={t} href={`/cari?q=${encodeURIComponent(t)}`}>#{t}</Link>)}</div>
@@ -111,21 +132,25 @@ export default async function ArticlePage({ params }: P) {
               <a className="tg" href={`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(post.title)}`} target="_blank" rel="noopener">Telegram</a>
             </div>
 
-            <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_ARTICLE} />
-
             {related.length > 0 && (
               <>
                 <div className="section-title"><h2>Baca juga</h2></div>
                 <div className="grid">{related.slice(0, 3).map((p) => <PostCard key={p.id} post={p} />)}</div>
               </>
             )}
+
+            {/* Multiplex: grid "kandungan disyorkan" bercampur iklan */}
+            <AdSlot slot={SLOT_MULTIPLEX} variant="multiplex" />
           </article>
 
           <aside>
-            <div className="sticky">
+            <AdSlot slot={SLOT_SIDEBAR} variant="vertical" />
+            <div className="side-list">
               <div className="side-head"><span>// Terkini</span><span className="pill" style={{ border: 0, padding: 0 }}><span className="dot" />Live</span></div>
-              {latest.filter((p) => p.id !== post.id).slice(0, 6).map((p) => <MiniCard key={p.id} post={p} />)}
+              {latest.filter((p) => p.id !== post.id).slice(0, 5).map((p) => <MiniCard key={p.id} post={p} />)}
             </div>
+            {/* Iklan melekat: kekal kelihatan semasa pembaca skrol artikel */}
+            <div className="sticky-ad"><AdSlot slot={SLOT_SIDEBAR} variant="vertical" /></div>
           </aside>
         </div>
       </main>

@@ -46,20 +46,22 @@ export default async function Listing({ page, category }: { page: number; catego
             <div className="hero-side">{side.map((p) => <MiniCard key={p.id} post={p} />)}</div>
           </section>
         )}
+        {showHero && <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_LIST} />}
 
         <div className="section-title">
           {!category && page > 1 ? <h1>Terkini — halaman {page}</h1> : <h2>{category ? 'Artikel' : 'Terkini'}</h2>}
         </div>
         {!posts.length && <p className="empty">// belum ada artikel — auto-post akan isi tak lama lagi_</p>}
-        {grid.length > 0 && (
-          <div className="grid">
-            {grid.slice(0, 6).map((p, i) => <PostCard key={p.id} post={p} priority={!showHero && i < 3} />)}
+        {/* Kad dalam kumpulan 6 (2 baris), dengan iklan di antara setiap kumpulan */}
+        {Array.from({ length: Math.ceil(grid.length / 6) }, (_, g) => (
+          <div key={g}>
+            {g > 0 && <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_LIST} />}
+            <div className="grid">
+              {grid.slice(g * 6, g * 6 + 6).map((p, i) => <PostCard key={p.id} post={p} priority={!showHero && g === 0 && i < 3} />)}
+            </div>
           </div>
-        )}
-        {grid.length > 6 && <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_LIST} />}
-        {grid.length > 6 && (
-          <div className="grid">{grid.slice(6).map((p) => <PostCard key={p.id} post={p} />)}</div>
-        )}
+        ))}
+        <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_MULTIPLEX} variant="multiplex" />
         <Pagination page={page} total={total} perPage={PER_PAGE} base={base} />
       </main>
     </>
