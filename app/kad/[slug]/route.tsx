@@ -20,16 +20,25 @@ async function loadFont(weight: number, text: string) {
   } catch { return null; }
 }
 
-// Gambar artikel → data URL (hanya JPG/PNG; format lain dilangkau supaya kad tetap dijana)
+// Gambar artikel → data URL JPEG.
+// Penjana kad hanya faham JPG/PNG, jadi WebP/AVIF/GIF (biasa di portal berita) ditukar dulu dengan sharp.
 async function loadPhoto(url?: string | null) {
   if (!url) return null;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    const type = res.headers.get('content-type') || '';
-    if (!res.ok || !/image\/(jpe?g|png)/.test(type)) return null;
-    const b64 = Buffer.from(await res.arrayBuffer()).toString('base64');
-    return `data:${type};base64,${b64}`;
-  } catch { return null; }
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return null;
+    const type = (res.headers.get('content-type') || '').toLowerCase();
+    let buf = Buffer.from(await res.arrayBuffer());
+    if (/image\/(jpe?g|png)/.test(type) && buf.length < 4_000_000) {
+      return `data:${type.split(';')[0]};base64,${buf.toString('base64')}`;
+    }
+    const sharp = (await import('sharp')).default;
+    buf = await sharp(buf).resize({ width: 1080, height: 1000, fit: 'cover', withoutEnlargement: false }).jpeg({ quality: 82 }).toBuffer();
+    return `data:image/jpeg;base64,${buf.toString('base64')}`;
+  } catch (e) {
+    console.error('Kad: gagal muat gambar', url, e);
+    return null;
+  }
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
