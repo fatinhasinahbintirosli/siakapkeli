@@ -18,6 +18,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <input type="checkbox" name="autopost_enabled" defaultChecked={get('autopost_enabled', true) !== false} />
           Hidupkan auto-post (setiap 2 jam)
         </label>
+        <label className="row" style={{ fontWeight: 600, marginBottom: 14 }}>
+          <input type="checkbox" name="share_enabled" defaultChecked={get('share_enabled', true) !== false} />
+          Auto-share ke Facebook melalui Postolab (setiap jam, 1 artikel)
+        </label>
         <div className="field">
           <label htmlFor="ai">Arahan tambahan untuk AI</label>
           <textarea id="ai" name="ai_extra_instructions" rows={5} defaultValue={get('ai_extra_instructions', '')}

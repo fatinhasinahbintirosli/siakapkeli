@@ -164,6 +164,7 @@ export async function saveSettings(form: FormData) {
   const { db } = await requireAdmin();
   await db.from('settings').upsert([
     { key: 'autopost_enabled', value: form.get('autopost_enabled') === 'on' },
+    { key: 'share_enabled', value: form.get('share_enabled') === 'on' },
     { key: 'ai_extra_instructions', value: String(form.get('ai_extra_instructions') || '') },
   ]);
   revalidatePath('/admin/settings');
