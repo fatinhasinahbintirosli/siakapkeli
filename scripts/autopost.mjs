@@ -159,7 +159,8 @@ async function uploadToImgbb(imageUrl, name) {
     const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: form, signal: AbortSignal.timeout(60000) });
     const j = await res.json();
     if (!j.success) throw new Error(j?.error?.message || 'imgbb gagal');
-    return { url: j.data.image?.url || j.data.url, thumb: j.data.medium?.url || j.data.thumb?.url || j.data.url };
+    const https = (u) => (u || '').replace(/^http:\/\//, 'https://');
+    return { url: https(j.data.image?.url || j.data.url), thumb: https(j.data.medium?.url || j.data.thumb?.url || j.data.url) };
   };
   try {
     return await tryUpload(imageUrl); // imgbb boleh terima URL terus
