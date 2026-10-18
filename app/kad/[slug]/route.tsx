@@ -46,11 +46,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   const post = await getPost(slug.replace(/\.png$/, ''));
   if (!post) return new Response('Tidak dijumpai', { status: 404 });
 
-  const title = post.title.length > 110 ? post.title.slice(0, 107).trimEnd() + '…' : post.title;
-  const size = title.length <= 45 ? 76 : title.length <= 70 ? 66 : title.length <= 90 ? 58 : 52;
+  // Teks kad: guna fb_hook (gaya "petikan.." + ayat ingin tahu) kalau ada, jika tidak tajuk artikel
+  const raw = (post.fb_hook || post.title).trim();
+  const title = raw.length > 130 ? raw.slice(0, 127).trimEnd() + '…' : raw;
+  // Pisahkan petikan di depan: "itu dibuat atas permintaan suami.." Patutlah jarang...
+  const qm = title.match(/^["“'‘](.+?)["”'’]\s*[-–—]?\s*([\s\S]*)$/);
+  const quote = qm ? qm[1].trim() : '';
+  const rest = qm ? qm[2].trim() : title;
+  const size = title.length <= 45 ? 76 : title.length <= 70 ? 66 : title.length <= 95 ? 58 : title.length <= 115 ? 52 : 48;
   const cat = post.categories?.name?.toUpperCase() || 'TERKINI';
   const [brandA, ...brandB] = SITE_NAME.split(' ');
-  const allText = `${title}${SITE_NAME}@${domain}${cat}“BERITA VIRAL·TERKINIBACA DI KOMEN 👇0123456789`;
+  const allText = `${title}“”${SITE_NAME}@${domain}${cat}“BERITA VIRAL·TERKINIBACA DI KOMEN 👇0123456789`;
 
   const [photo, f800, f500] = await Promise.all([
     loadPhoto(post.image_url || post.image_thumb),
@@ -75,10 +81,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
             </div>
             <div style={{ display: 'flex', fontSize: 28, fontWeight: 500, color: '#6B7280', marginLeft: 20 }}>@{domain}</div>
           </div>
-          <div style={{ display: 'flex', marginTop: 40 }}>
-            <div style={{ display: 'flex', fontSize: 150, fontWeight: 800, color: '#FF3E00', lineHeight: 0.8, marginRight: 22, marginTop: 6 }}>“</div>
-            <div style={{ display: 'flex', flex: 1, fontSize: size, fontWeight: 800, color: '#FAFAFA', lineHeight: 1.12, letterSpacing: -2 }}>{title}</div>
-          </div>
+          {quote ? (
+            <div style={{ display: 'flex', flexDirection: 'column', marginTop: 40 }}>
+              <div style={{ display: 'flex', fontSize: size, fontWeight: 800, color: '#FFD60A', lineHeight: 1.12, letterSpacing: -2 }}>“{quote}”</div>
+              {rest && <div style={{ display: 'flex', fontSize: size, fontWeight: 800, color: '#FAFAFA', lineHeight: 1.12, letterSpacing: -2, marginTop: 14 }}>{rest}</div>}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', marginTop: 40 }}>
+              <div style={{ display: 'flex', fontSize: 150, fontWeight: 800, color: '#FF3E00', lineHeight: 0.8, marginRight: 22, marginTop: 6 }}>“</div>
+              <div style={{ display: 'flex', flex: 1, fontSize: size, fontWeight: 800, color: '#FAFAFA', lineHeight: 1.12, letterSpacing: -2 }}>{rest}</div>
+            </div>
+          )}
         </div>
 
         {/* Gambar artikel */}

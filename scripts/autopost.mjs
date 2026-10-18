@@ -146,7 +146,14 @@ ${extra ? `- Arahan tambahan pemilik blog: ${extra}\n` : ''}
 Pilih SATU kategori paling sesuai daripada senarai ini: ${categories.join(', ')}.
 
 Balas dalam JSON sahaja dengan kunci:
-{"title": string, "excerpt": string (1-2 ayat, maks 200 aksara), "meta_description": string (maks 155 aksara, ada kata kunci utama), "content_html": string, "category": string, "tags": string[] (3-6 tag pendek huruf kecil)}
+{"title": string, "excerpt": string (1-2 ayat, maks 200 aksara), "meta_description": string (maks 155 aksara, ada kata kunci utama), "content_html": string, "category": string, "tags": string[] (3-6 tag pendek huruf kecil), "fb_hook": string}
+
+PERATURAN "fb_hook" (teks pada gambar kad Facebook, maks 120 aksara):
+- Gaya berita viral Malaysia yang buat orang tertanya-tanya dan nak baca. Contoh bentuk:
+  "Petikan pendek.." Ayat yang membina rasa ingin tahu, akhirnya X dedah perkara sebenar
+- Petikan dalam tanda "..." MESTI kata-kata sebenar daripada bahan sumber (boleh dipendekkan dengan ..). Kalau tiada petikan sesuai dalam sumber, tulis tanpa petikan.
+- Boleh sembunyikan jawapan untuk buat orang ingin tahu (cth: "akhirnya dedah sebab sebenar", "rupanya ini puncanya"), TETAPI jangan reka fakta, jangan besar-besarkan, dan jangan bayangkan perkara yang tiada dalam berita (cth: jangan bayangkan kematian, jenayah, cerai atau skandal kalau sumber tak sebut).
+- Ejaan betul, bahasa santai. Tiada hashtag, tiada emoji, tiada link.
 
 BAHAN SUMBER (${sourceName}):
 Tajuk asal: ${title}
@@ -317,6 +324,7 @@ async function processItem(item, source, categories, extra) {
     excerpt: ai.excerpt?.slice(0, 300) || null,
     meta_description: ai.meta_description?.slice(0, 160) || null,
     content: `${bodyHtml}\n${credit}`,
+    fb_hook: String(ai.fb_hook || '').replace(/\s+/g, ' ').trim().slice(0, 140) || null,
     image_url: image?.url || null,
     image_thumb: image?.thumb || null,
     image_credit: image ? source.name : null,
@@ -329,9 +337,12 @@ async function processItem(item, source, categories, extra) {
     published_at: new Date().toISOString(),
   };
   let { data: post, error } = await db.from('posts').insert(row).select('id, slug').single();
-  if (error && /source_title/.test(error.message)) { // database lama tanpa lajur source_title
-    delete row.source_title;
-    ({ data: post, error } = await db.from('posts').insert(row).select('id, slug').single());
+  // Database lama tanpa lajur baru (source_title / fb_hook): buang lajur itu dan cuba lagi
+  for (const col of ['source_title', 'fb_hook']) {
+    if (error && error.message.includes(col)) {
+      delete row[col];
+      ({ data: post, error } = await db.from('posts').insert(row).select('id, slug').single());
+    }
   }
   if (error) throw new Error(error.message);
   // Ingat tajuk ini supaya artikel seterusnya dalam pusingan yang sama juga disemak
