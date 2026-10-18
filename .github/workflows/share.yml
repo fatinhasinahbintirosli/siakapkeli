@@ -1,8 +1,6 @@
 name: Auto-share ke Facebook (Postolab)
 
 on:
-  schedule:
-  
   workflow_dispatch: {}
 
 concurrency:
