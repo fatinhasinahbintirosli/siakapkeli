@@ -1,7 +1,7 @@
 name: Auto-post artikel
 
-   on:
-     workflow_dispatch: {}
+on:
+  workflow_dispatch: {}
 
 concurrency:
   group: autopost
