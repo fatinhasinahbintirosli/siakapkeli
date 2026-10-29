@@ -199,27 +199,95 @@ ${text.slice(0, 12000)}`;
   throw err;
 }
 
-async function uploadToImgbb(imageUrl, name) {
-  const tryUpload = async (image) => {
-    const form = new FormData();
-    form.append('key', IMGBB_KEY);
-    form.append('image', image);
-    form.append('name', name.slice(0, 60));
-    const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: form, signal: AbortSignal.timeout(60000) });
-    const j = await res.json();
-    if (!j.success) throw new Error(j?.error?.message || 'imgbb gagal');
-    const https = (u) => (u || '').replace(/^http:\/\//, 'https://');
-    return { url: https(j.data.image?.url || j.data.url), thumb: https(j.data.medium?.url || j.data.thumb?.url || j.data.url), width: Number(j.data.width) || 0, height: Number(j.data.height) || 0 };
-  };
-  try {
-    return await tryUpload(imageUrl); // imgbb boleh terima URL terus
-  } catch {
-    // sesetengah laman sekat imgbb; muat turun dulu dan hantar base64
-    const r = await fetch(imageUrl, { headers: { 'User-Agent': UA, Referer: new URL(imageUrl).origin }, signal: AbortSignal.timeout(30000) });
-    if (!r.ok) throw new Error(`Gambar HTTP ${r.status}`);
-    const b64 = Buffer.from(await r.arrayBuffer()).toString('base64');
-    return await tryUpload(b64);
+// ---------- Muat naik gambar ----------
+// Utama: imgbb. Kalau imgbb kena had (rate limit), pusingan ini tukar ke Supabase Storage
+// (gambar dikecilkan dulu supaya jimat ruang & bandwidth).
+let imgbbBlocked = false;
+let bucketReady = false;
+const RATE_LIMIT = /rate limit|too many|quota/i;
+
+async function downloadImage(imageUrl) {
+  const r = await fetch(imageUrl, { headers: { 'User-Agent': UA, Referer: new URL(imageUrl).origin }, signal: AbortSignal.timeout(30000) });
+  if (!r.ok) throw new Error(`Gambar HTTP ${r.status}`);
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (buf.length < 2000) throw new Error('Gambar terlalu kecil/rosak');
+  return buf;
+}
+
+async function imgbbUpload(image, name) {
+  const form = new FormData();
+  form.append('key', IMGBB_KEY);
+  form.append('image', image);
+  form.append('name', name.slice(0, 60));
+  const res = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: form, signal: AbortSignal.timeout(60000) });
+  const j = await res.json().catch(() => ({}));
+  if (!j.success) {
+    const msg = j?.error?.message || `imgbb HTTP ${res.status}`;
+    const err = new Error(msg);
+    if (res.status === 429 || RATE_LIMIT.test(msg)) err.rateLimited = true;
+    throw err;
   }
+  const https = (u) => (u || '').replace(/^http:\/\//, 'https://');
+  return { url: https(j.data.image?.url || j.data.url), thumb: https(j.data.medium?.url || j.data.thumb?.url || j.data.url), width: Number(j.data.width) || 0, height: Number(j.data.height) || 0 };
+}
+
+async function supabaseUpload(buf, name) {
+  if (!bucketReady) {
+    // Cipta bucket awam "images" kali pertama (abaikan jika sudah wujud)
+    await db.storage.createBucket('images', { public: true }).catch(() => {});
+    bucketReady = true;
+  }
+  let out;
+  try {
+    const sharp = (await import('sharp')).default;
+    out = await sharp(buf).rotate().resize({ width: 1200, withoutEnlargement: true }).webp({ quality: 72 }).toBuffer({ resolveWithObject: true });
+  } catch {
+    out = { data: buf, info: { width: 0, height: 0 } }; // sharp tiada — simpan fail asal
+  }
+  const isWebp = out.info.width > 0;
+  const path = `${new Date().toISOString().slice(0, 7)}/${name.slice(0, 60)}-${Date.now().toString(36)}${isWebp ? '.webp' : ''}`;
+  const { error } = await db.storage.from('images').upload(path, out.data, { contentType: isWebp ? 'image/webp' : 'image/jpeg', cacheControl: '31536000', upsert: true });
+  if (error) throw new Error(`Supabase Storage: ${error.message}`);
+  const { data } = db.storage.from('images').getPublicUrl(path);
+  return { url: data.publicUrl, thumb: data.publicUrl, width: out.info.width, height: out.info.height };
+}
+
+async function uploadImage(imageUrl, name) {
+  let buf = null;
+  if (!imgbbBlocked) {
+    try {
+      return await imgbbUpload(imageUrl, name); // imgbb boleh terima URL terus
+    } catch (e) {
+      if (e.rateLimited) { imgbbBlocked = true; console.log('imgbb kena had — guna Supabase Storage untuk pusingan ini'); }
+      else {
+        // sesetengah laman sekat imgbb; muat turun dulu dan hantar base64
+        buf = await downloadImage(imageUrl);
+        try { return await imgbbUpload(buf.toString('base64'), name); }
+        catch (e2) { if (e2.rateLimited) imgbbBlocked = true; else throw e2; }
+      }
+    }
+  }
+  return supabaseUpload(buf || await downloadImage(imageUrl), name);
+}
+
+// Cuba semula gambar untuk artikel baru-baru ini yang terbit tanpa gambar
+async function repairMissingImages(limit = 8) {
+  const since = new Date(Date.now() - 3 * 86400000).toISOString();
+  const { data: posts } = await db.from('posts').select('id, slug, source_url, source_name')
+    .is('image_url', null).not('source_url', 'is', null).gte('created_at', since)
+    .order('created_at', { ascending: false }).limit(limit);
+  let fixed = 0;
+  for (const p of posts || []) {
+    try {
+      const art = await fetchArticle(p.source_url);
+      if (!art.image) continue;
+      const img = await uploadImage(new URL(art.image, p.source_url).href, p.slug);
+      await db.from('posts').update({ image_url: img.url, image_thumb: img.thumb, image_credit: p.source_name }).eq('id', p.id);
+      fixed++;
+    } catch { /* cuba lagi pusingan seterusnya */ }
+  }
+  if (fixed) await log('ok', `Gambar dipulihkan untuk ${fixed} artikel lama yang terbit tanpa gambar.`, 'Sistem');
+  return fixed;
 }
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -296,20 +364,23 @@ async function processItem(item, source, categories, extra) {
   let image = null;
   const imgSrc = art.image || item.enclosure?.url;
   if (imgSrc) {
-    try { image = await uploadToImgbb(new URL(imgSrc, link).href, slugify(ai.title)); }
+    try { image = await uploadImage(new URL(imgSrc, link).href, slugify(ai.title)); }
     catch (e) { await log('error', `Gambar gagal (${e.message}) — terbit tanpa gambar`, source.name); }
   }
 
-  // Gambar di tengah artikel (maks INLINE_IMAGES), dimuat naik ke imgbb juga
+  // Gambar di tengah artikel (maks INLINE_IMAGES). Dilangkau bila imgbb kena had,
+  // supaya ruang Supabase Storage hanya digunakan untuk gambar utama.
   const figures = [];
+  let tries = 0;
   for (const im of art.inlineImages || []) {
-    if (figures.length >= INLINE_IMAGES) break;
+    if (figures.length >= INLINE_IMAGES || imgbbBlocked || tries >= INLINE_IMAGES + 1) break;
+    tries++;
     try {
-      const up = await uploadToImgbb(im.src, `${slugify(ai.title)}-${figures.length + 2}`);
+      const up = await imgbbUpload(im.src, `${slugify(ai.title)}-${figures.length + 2}`);
       if (up.width && up.width < 300) continue; // rupanya gambar kecil
       const alt = esc(im.alt || ai.title);
       figures.push(`<figure><img src="${esc(up.url)}" alt="${alt}"${up.width ? ` width="${up.width}" height="${up.height}"` : ''} loading="lazy" /></figure>`);
-    } catch { /* abaikan gambar yang gagal */ }
+    } catch (e) { if (e.rateLimited) imgbbBlocked = true; /* abaikan gambar yang gagal */ }
   }
   const bodyHtml = insertInlineImages(String(ai.content_html || ''), figures);
 
@@ -361,6 +432,8 @@ async function main() {
   const { data: sources } = await db.from('sources').select('*').eq('active', true);
   if (!sources?.length) { console.log('Tiada sumber aktif.'); return; }
   await loadRecentTitles();
+  let repaired = 0;
+  try { repaired = await repairMissingImages(); } catch (e) { console.warn('Pulih gambar gagal:', e.message); }
 
   let published = 0;
   for (const source of sources) {
@@ -390,7 +463,7 @@ async function main() {
   }
 
   console.log(`Selesai. ${published} artikel diterbitkan.`);
-  if (published && SITE_URL && REVALIDATE_SECRET) {
+  if ((published || repaired) && SITE_URL && REVALIDATE_SECRET) {
     try {
       await fetch(`${SITE_URL}/api/revalidate?secret=${encodeURIComponent(REVALIDATE_SECRET)}`, { method: 'POST' });
     } catch (e) { console.warn('Revalidate gagal:', e.message); }
