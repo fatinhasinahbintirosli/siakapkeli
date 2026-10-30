@@ -122,13 +122,17 @@ async function main() {
   if (setting && setting.value === false) { console.log('Auto-share dimatikan di admin.'); return; }
 
   const since = new Date(Date.now() - MAX_AGE_HOURS * 3600 * 1000).toISOString();
-  const { data: posts, error } = await db.from('posts')
-    .select('id, title, slug, excerpt, image_url, share_attempts')
-    .eq('status', 'published').is('shared_at', null).not('image_url', 'is', null)
-    .lt('share_attempts', 3).gte('published_at', since)
-    .order('published_at', { ascending: false }).limit(1);
-  if (error) throw new Error(error.message);
-  const post = posts?.[0];
+  // Utamakan artikel yang ada gambar; kalau tiada, guna artikel tanpa gambar (kad tetap dijana dengan latar gelap)
+  const pickPost = async (needImage) => {
+    let q = db.from('posts').select('id, title, slug, excerpt, image_url, share_attempts')
+      .eq('status', 'published').is('shared_at', null)
+      .lt('share_attempts', 3).gte('published_at', since);
+    if (needImage) q = q.not('image_url', 'is', null);
+    const { data, error } = await q.order('published_at', { ascending: false }).limit(1);
+    if (error) throw new Error(error.message);
+    return data?.[0];
+  };
+  const post = (await pickPost(true)) || (await pickPost(false));
   if (!post) { console.log('Tiada artikel baru untuk dikongsi.'); return; }
 
   const articleUrl = `${SITE_URL}/${post.slug}`;
