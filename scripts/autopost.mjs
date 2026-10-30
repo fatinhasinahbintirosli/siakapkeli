@@ -149,10 +149,17 @@ Balas dalam JSON sahaja dengan kunci:
 {"title": string, "excerpt": string (1-2 ayat, maks 200 aksara), "meta_description": string (maks 155 aksara, ada kata kunci utama), "content_html": string, "category": string, "tags": string[] (3-6 tag pendek huruf kecil), "fb_hook": string}
 
 PERATURAN "fb_hook" (teks pada gambar kad Facebook, maks 120 aksara):
-- Gaya berita viral Malaysia yang buat orang tertanya-tanya dan nak baca. Contoh bentuk:
-  "Petikan pendek.." Ayat yang membina rasa ingin tahu, akhirnya X dedah perkara sebenar
-- Petikan dalam tanda "..." MESTI kata-kata sebenar daripada bahan sumber (boleh dipendekkan dengan ..). Kalau tiada petikan sesuai dalam sumber, tulis tanpa petikan.
-- Boleh sembunyikan jawapan untuk buat orang ingin tahu (cth: "akhirnya dedah sebab sebenar", "rupanya ini puncanya"), TETAPI jangan reka fakta, jangan besar-besarkan, dan jangan bayangkan perkara yang tiada dalam berita (cth: jangan bayangkan kematian, jenayah, cerai atau skandal kalau sumber tak sebut).
+- Tujuan: buat orang yang scroll Facebook BERHENTI dan RASA GERAM nak tahu jawapan. Jangan beri jawapan dalam hook.
+- Struktur terbaik: [situasi/emosi yang membina tekanan] + [pendedahan yang disembunyikan]. Contoh gaya yang dikehendaki:
+  * Tak tahan dituduh tiada kelayakan agama, PU Riz akhirnya bongkar sesuatu tentang dirinya
+  * Patutlah jarang kongsi foto dengan suami, 10 tahun kahwin akhirnya Linda Onn dedah rahsia ini
+  * Beberapa kali tersasul panggil 'sayang', akhirnya Puteri Sarah umum berita ini
+  * Bekas isteri kahwin baru, ramai terkejut ini kata-kata Jovian pada bekas isterinya
+  * Baru saja dikejarkan ke hospital, suami sahkan ini telah berlaku dengan Nora Ariffin
+- Ayat pembuka guna perkataan beremosi yang SESUAI dengan cerita: tak tahan, lama berdiam, selepas didesak, patutlah, baru saja, ramai terkejut, netizen persoal.
+- Penutup sembunyikan jawapan: akhirnya bongkar sesuatu, akhirnya buka mulut, akhirnya dedah rahsia ini, rupanya ini puncanya, ini yang berlaku, ramai tak sangka.
+- Petikan "..." di depan adalah PILIHAN. Guna hanya jika petikan itu MENGUJA tanpa memberi jawapan (cth: "Itu dibuat atas permintaan suami.."). Kalau petikan terbaik terus beri jawapan (cth: "Saya ada tauliah sejak 2020"), JANGAN guna petikan. Petikan MESTI kata-kata sebenar daripada sumber (boleh dipendekkan dengan ..).
+- Jangan reka fakta, jangan besar-besarkan, dan jangan bayangkan perkara yang tiada dalam berita (cth: jangan bayangkan kematian, jenayah, cerai atau skandal kalau sumber tak sebut). Emosi pembuka mesti munasabah dengan apa yang berlaku dalam berita.
 - Ejaan betul, bahasa santai. Tiada hashtag, tiada emoji, tiada link.
 
 BAHAN SUMBER (${sourceName}):
